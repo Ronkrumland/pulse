@@ -1,16 +1,37 @@
+using Microsoft.Extensions.Options;
+using Pulse.Agent.Windows.Collectors;
+
 namespace Pulse.Agent.Windows;
 
-public class Worker(ILogger<Worker> logger) : BackgroundService
+public class Worker(
+    ICpuTemperatureSource cpuTemperature,
+    IOptions<CpuTemperatureOptions> options,
+    TimeProvider timeProvider,
+    ILogger<Worker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var interval = TimeSpan.FromSeconds(options.Value.PollingIntervalSeconds);
+        using var timer = new PeriodicTimer(interval, timeProvider);
+        var reportUnavailable = true;
+
         while (!stoppingToken.IsCancellationRequested)
         {
-            if (logger.IsEnabled(LogLevel.Information))
+            if (cpuTemperature.ReadTemperatureCelsius() is float temperature)
             {
-                logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
+                logger.LogInformation("CPU temperature: {TemperatureCelsius:F1} °C", temperature);
+                reportUnavailable = true;
             }
-            await Task.Delay(1000, stoppingToken);
+            else if (reportUnavailable)
+            {
+                logger.LogWarning("CPU temperature is unavailable");
+                reportUnavailable = false;
+            }
+
+            if (!await timer.WaitForNextTickAsync(stoppingToken))
+            {
+                break;
+            }
         }
     }
 }

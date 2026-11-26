@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Pulse.Agent.Windows/Pulse.Agent.Windows.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Pulse.Agent.Tests/Pulse.Agent.Tests.csproj" />
+  </Folder>
 </Solution>
