@@ -1,9 +1,9 @@
+using System.Buffers;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using MQTTnet;
 using MQTTnet.Protocol;
 using MQTTnet.Server;
 using Pulse.Agent.Windows.Services;
@@ -22,18 +22,20 @@ public class MqttServiceTests
         const string username = "test-user";
         const string password = "test-password";
         var port = GetLoopbackPort();
-        var broker = new MqttFactory().CreateMqttServer();
-        await broker.StartAsync(new MqttServerOptionsBuilder()
+        using var broker = new MqttServerFactory().CreateMqttServer(new MqttServerOptionsBuilder()
+            .WithDefaultEndpoint()
             .WithDefaultEndpointBoundIPAddress(IPAddress.Loopback)
             .WithDefaultEndpointBoundIPV6Address(IPAddress.IPv6Loopback)
             .WithDefaultEndpointPort(port)
-            .WithConnectionValidator(context =>
-            {
-                context.ReasonCode = context.Username == username && context.Password == password
-                    ? MqttConnectReasonCode.Success
-                    : MqttConnectReasonCode.BadUserNameOrPassword;
-            })
             .Build());
+        broker.ValidatingConnectionAsync += context =>
+        {
+            context.ReasonCode = context.UserName == username && context.Password == password
+                ? MqttConnectReasonCode.Success
+                : MqttConnectReasonCode.BadUserNameOrPassword;
+            return Task.CompletedTask;
+        };
+        await broker.StartAsync();
 
         using var service = new MqttService(Options.Create(new MqttOptions
         {
@@ -61,7 +63,7 @@ public class MqttServiceTests
                 json => json.GetProperty("online").GetBoolean(), timeout.Token);
             Assert.Equal(deviceId, online.GetProperty("deviceId").GetString());
 
-            var agent = Assert.Single(await broker.GetClientStatusAsync());
+            var agent = Assert.Single(await broker.GetClientsAsync());
             await agent.DisconnectAsync();
             await WaitForRetainedMessageAsync(broker, availabilityTopic,
                 json => !json.GetProperty("online").GetBoolean(), timeout.Token);
@@ -92,17 +94,17 @@ public class MqttServiceTests
         return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
 
-    private static async Task<JsonElement> WaitForRetainedMessageAsync(IMqttServer broker, string topic,
+    private static async Task<JsonElement> WaitForRetainedMessageAsync(MqttServer broker, string topic,
         Func<JsonElement, bool> predicate, CancellationToken cancellationToken)
     {
         while (true)
         {
-            var messages = await broker.GetRetainedApplicationMessagesAsync();
+            var messages = await broker.GetRetainedMessagesAsync();
             var message = messages.SingleOrDefault(message => message.Topic == topic);
             if (message is not null)
             {
                 Assert.Equal(MqttQualityOfServiceLevel.AtLeastOnce, message.QualityOfServiceLevel);
-                var payload = JsonSerializer.Deserialize<JsonElement>(message.Payload);
+                var payload = JsonSerializer.Deserialize<JsonElement>(message.Payload.ToArray());
                 if (predicate(payload))
                 {
                     return payload;

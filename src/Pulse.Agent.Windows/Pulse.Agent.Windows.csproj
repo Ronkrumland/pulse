@@ -11,7 +11,7 @@
     <ProjectReference Include="../Pulse.Contracts/Pulse.Contracts.csproj" />
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.15" />
-    <PackageReference Include="MQTTnet" Version="3.0.6" />
+    <PackageReference Include="MQTTnet" Version="5.2.0.1603" />
     <PackageReference Include="NAudio" Version="3.3.0" />
   </ItemGroup>
   <ItemGroup>
