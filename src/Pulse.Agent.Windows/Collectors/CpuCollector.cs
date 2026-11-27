@@ -2,15 +2,10 @@ using LibreHardwareMonitor.Hardware;
 
 namespace Pulse.Agent.Windows.Collectors;
 
-internal sealed class CpuCollector : ICpuTemperatureSource, IDisposable
+internal sealed class CpuCollector(IHardwareProvider hardwareProvider) : ICpuTemperatureSource
 {
-    private readonly Computer _computer = new() { IsCpuEnabled = true };
-
-    public float? ReadTemperatureCelsius()
-    {
-        _computer.Open();
-        return ReadTemperatureCelsius(_computer.Hardware);
-    }
+    public float? ReadTemperatureCelsius() =>
+        ReadTemperatureCelsius(hardwareProvider.GetHardware());
 
     internal static float? ReadTemperatureCelsius(IEnumerable<IHardware> hardware)
     {
@@ -47,6 +42,4 @@ internal sealed class CpuCollector : ICpuTemperatureSource, IDisposable
 
         return highestTemperature;
     }
-
-    public void Dispose() => _computer.Close();
 }

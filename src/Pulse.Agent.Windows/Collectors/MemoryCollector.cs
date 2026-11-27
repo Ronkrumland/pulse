@@ -2,16 +2,12 @@ using LibreHardwareMonitor.Hardware;
 
 namespace Pulse.Agent.Windows.Collectors;
 
-internal sealed class MemoryCollector : IMemorySource, IDisposable
+internal sealed class MemoryCollector(IHardwareProvider hardwareProvider) : IMemorySource
 {
     private const float MegabytesPerGigabyte = 1024f;
-    private readonly Computer _computer = new() { IsMemoryEnabled = true };
 
-    public MemoryReading? ReadMemory()
-    {
-        _computer.Open();
-        return ReadMemory(_computer.Hardware);
-    }
+    public MemoryReading? ReadMemory() =>
+        ReadMemory(hardwareProvider.GetHardware());
 
     internal static MemoryReading? ReadMemory(IEnumerable<IHardware> hardware)
     {
@@ -59,6 +55,4 @@ internal sealed class MemoryCollector : IMemorySource, IDisposable
 
         return new MemoryReading(usedMegabytes, totalMegabytes);
     }
-
-    public void Dispose() => _computer.Close();
 }

@@ -9,7 +9,7 @@ public class Worker(
     IGpuSource gpuSource,
     IMemorySource memorySource,
     ITelemetryPublisher telemetry,
-    IOptions<CpuTemperatureOptions> options,
+    IOptions<TelemetryOptions> options,
     TimeProvider timeProvider,
     ILogger<Worker> logger) : BackgroundService
 {
