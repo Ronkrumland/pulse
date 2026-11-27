@@ -53,12 +53,13 @@ public class MqttServiceTests
         try
         {
             await service.StartAsync(timeout.Token);
-            service.PublishCpuTemperature(43.25f, firstObservation);
+            service.PublishTelemetry(43.25f, 61.5f, firstObservation);
 
             var first = await WaitForRetainedMessageAsync(broker, telemetryTopic, _ => true, timeout.Token);
             Assert.Equal(deviceId, first.GetProperty("deviceId").GetString());
             Assert.Equal(firstObservation, first.GetProperty("observedAt").GetDateTimeOffset());
             Assert.Equal(43.25f, first.GetProperty("cpuTemperatureCelsius").GetSingle());
+            Assert.Equal(61.5f, first.GetProperty("gpuTemperatureCelsius").GetSingle());
             var online = await WaitForRetainedMessageAsync(broker, availabilityTopic,
                 json => json.GetProperty("online").GetBoolean(), timeout.Token);
             Assert.Equal(deviceId, online.GetProperty("deviceId").GetString());
@@ -68,11 +69,12 @@ public class MqttServiceTests
             await WaitForRetainedMessageAsync(broker, availabilityTopic,
                 json => !json.GetProperty("online").GetBoolean(), timeout.Token);
 
-            service.PublishCpuTemperature(46f, secondObservation);
-            service.PublishCpuTemperature(48f, latestObservation);
+            service.PublishTelemetry(46f, 63f, secondObservation);
+            service.PublishTelemetry(48f, null, latestObservation);
             var latest = await WaitForRetainedMessageAsync(broker, telemetryTopic,
                 json => json.GetProperty("observedAt").GetDateTimeOffset() == latestObservation, timeout.Token);
             Assert.Equal(48f, latest.GetProperty("cpuTemperatureCelsius").GetSingle());
+            Assert.Equal(JsonValueKind.Null, latest.GetProperty("gpuTemperatureCelsius").ValueKind);
             await WaitForRetainedMessageAsync(broker, availabilityTopic,
                 json => json.GetProperty("online").GetBoolean(), timeout.Token);
 

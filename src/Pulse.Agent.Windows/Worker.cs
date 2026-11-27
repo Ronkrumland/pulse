@@ -6,6 +6,7 @@ namespace Pulse.Agent.Windows;
 
 public class Worker(
     ICpuTemperatureSource cpuTemperature,
+    IGpuTemperatureSource gpuTemperature,
     ITelemetryPublisher telemetry,
     IOptions<CpuTemperatureOptions> options,
     TimeProvider timeProvider,
@@ -15,20 +16,39 @@ public class Worker(
     {
         var interval = TimeSpan.FromSeconds(options.Value.PollingIntervalSeconds);
         using var timer = new PeriodicTimer(interval, timeProvider);
-        var reportUnavailable = true;
+        var reportCpuUnavailable = true;
+        var reportGpuUnavailable = true;
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            if (cpuTemperature.ReadTemperatureCelsius() is float temperature)
+            var cpuCelsius = cpuTemperature.ReadTemperatureCelsius();
+            var gpuCelsius = gpuTemperature.ReadTemperatureCelsius();
+
+            if (cpuCelsius is float cpu)
             {
-                telemetry.PublishCpuTemperature(temperature, timeProvider.GetUtcNow());
-                logger.LogInformation("CPU temperature: {TemperatureCelsius:F1} °C", temperature);
-                reportUnavailable = true;
+                logger.LogInformation("CPU temperature: {CpuTemperatureCelsius:F1} °C", cpu);
+                reportCpuUnavailable = true;
             }
-            else if (reportUnavailable)
+            else if (reportCpuUnavailable)
             {
                 logger.LogWarning("CPU temperature is unavailable");
-                reportUnavailable = false;
+                reportCpuUnavailable = false;
+            }
+
+            if (gpuCelsius is float gpu)
+            {
+                logger.LogInformation("GPU temperature: {GpuTemperatureCelsius:F1} °C", gpu);
+                reportGpuUnavailable = true;
+            }
+            else if (reportGpuUnavailable)
+            {
+                logger.LogWarning("GPU temperature is unavailable");
+                reportGpuUnavailable = false;
+            }
+
+            if (cpuCelsius is not null || gpuCelsius is not null)
+            {
+                telemetry.PublishTelemetry(cpuCelsius, gpuCelsius, timeProvider.GetUtcNow());
             }
 
             if (!await timer.WaitForNextTickAsync(stoppingToken))

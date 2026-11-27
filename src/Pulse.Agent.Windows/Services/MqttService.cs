@@ -15,15 +15,19 @@ internal sealed class MqttService(IOptions<MqttOptions> options, TimeProvider ti
     private static readonly TimeSpan CommunicationTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(5);
     private readonly MqttOptions _options = options.Value;
-    private readonly Channel<CpuTemperatureTelemetry> _readings = Channel.CreateBounded<CpuTemperatureTelemetry>(
+    private readonly Channel<DeviceTelemetry> _readings = Channel.CreateBounded<DeviceTelemetry>(
         new BoundedChannelOptions(1) { SingleReader = true, FullMode = BoundedChannelFullMode.DropOldest });
-    private CpuTemperatureTelemetry? _pendingReading;
+    private DeviceTelemetry? _pendingReading;
 
-    public void PublishCpuTemperature(float temperatureCelsius, DateTimeOffset observedAt)
+    public void PublishTelemetry(float? cpuTemperatureCelsius, float? gpuTemperatureCelsius, DateTimeOffset observedAt)
     {
         if (_options.Enabled)
         {
-            _readings.Writer.TryWrite(new CpuTemperatureTelemetry(_options.DeviceId, observedAt, temperatureCelsius));
+            _readings.Writer.TryWrite(new DeviceTelemetry(
+                _options.DeviceId,
+                observedAt,
+                cpuTemperatureCelsius,
+                gpuTemperatureCelsius));
         }
     }
 
