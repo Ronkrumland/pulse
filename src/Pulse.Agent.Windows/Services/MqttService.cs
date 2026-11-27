@@ -2,12 +2,9 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.Options;
 using MQTTnet;
-using MQTTnet.Client;
-using MQTTnet.Client.Connecting;
-using MQTTnet.Client.Disconnecting;
-using MQTTnet.Client.Options;
 using MQTTnet.Exceptions;
 using MQTTnet.Formatter;
+using MQTTnet.Protocol;
 using Pulse.Contracts;
 
 namespace Pulse.Agent.Windows.Services;
@@ -38,16 +35,21 @@ internal sealed class MqttService(IOptions<MqttOptions> options, TimeProvider ti
         }
 
         var topic = $"pulse/devices/{_options.DeviceId}";
-        var online = CreateMessage($"{topic}/availability", new DeviceAvailability(_options.DeviceId, true));
-        var offline = CreateMessage($"{topic}/availability", new DeviceAvailability(_options.DeviceId, false));
+        var availabilityTopic = $"{topic}/availability";
+        var online = CreateMessage(availabilityTopic, new DeviceAvailability(_options.DeviceId, true));
+        var offlinePayload = SerializePayload(new DeviceAvailability(_options.DeviceId, false));
+        var offline = CreateMessage(availabilityTopic, offlinePayload);
         var clientOptions = new MqttClientOptionsBuilder()
             .WithProtocolVersion(MqttProtocolVersion.V311)
             .WithTcpServer(_options.Host, _options.Port)
             .WithClientId($"pulse-{_options.DeviceId}")
             .WithCleanSession()
-            .WithCommunicationTimeout(CommunicationTimeout)
+            .WithTimeout(CommunicationTimeout)
             .WithKeepAlivePeriod(TimeSpan.FromSeconds(15))
-            .WithWillMessage(offline);
+            .WithWillTopic(availabilityTopic)
+            .WithWillPayload(offlinePayload)
+            .WithWillQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            .WithWillRetain();
 
         if (!string.IsNullOrWhiteSpace(_options.Username))
         {
@@ -56,17 +58,21 @@ internal sealed class MqttService(IOptions<MqttOptions> options, TimeProvider ti
 
         if (_options.UseTls)
         {
-            clientOptions.WithTls();
+            clientOptions.WithTlsOptions(tls => tls.UseTls());
         }
 
         var settings = clientOptions.Build();
-        var factory = new MqttFactory();
+        var factory = new MqttClientFactory();
         while (!stoppingToken.IsCancellationRequested)
         {
             using (var client = factory.CreateMqttClient())
             {
                 var disconnected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                client.UseDisconnectedHandler(_ => { disconnected.TrySetResult(); });
+                client.DisconnectedAsync += _ =>
+                {
+                    disconnected.TrySetResult();
+                    return Task.CompletedTask;
+                };
 
                 try
                 {
@@ -164,10 +170,16 @@ internal sealed class MqttService(IOptions<MqttOptions> options, TimeProvider ti
         }
     }
 
-    private static MqttApplicationMessage CreateMessage<T>(string topic, T payload) => new MqttApplicationMessageBuilder()
+    private static byte[] SerializePayload<T>(T payload) =>
+        JsonSerializer.SerializeToUtf8Bytes(payload, JsonSerializerOptions.Web);
+
+    private static MqttApplicationMessage CreateMessage<T>(string topic, T payload) =>
+        CreateMessage(topic, SerializePayload(payload));
+
+    private static MqttApplicationMessage CreateMessage(string topic, byte[] payload) => new MqttApplicationMessageBuilder()
         .WithTopic(topic)
-        .WithPayload(JsonSerializer.SerializeToUtf8Bytes(payload, JsonSerializerOptions.Web))
-        .WithAtLeastOnceQoS()
+        .WithPayload(payload)
+        .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
         .WithRetainFlag()
         .Build();
 }
