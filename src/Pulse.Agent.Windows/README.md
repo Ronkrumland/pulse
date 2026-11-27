@@ -1,6 +1,6 @@
 # Pulse.Agent.Windows
 
-The Windows agent logs CPU and GPU temperatures in degrees Celsius when it starts and every five seconds by default. Each reading is the highest available measurement from the CPU or GPU temperature sensors. Sensor availability depends on the hardware and its access requirements. The agent logs a warning when readings become unavailable and keeps polling.
+The Windows agent logs CPU and GPU temperatures (in degrees Celsius) along with system and GPU memory usage (in megabytes) when it starts and every five seconds by default. Each temperature reading is the highest available measurement from the CPU or GPU temperature sensors. Sensor availability depends on the hardware and its access requirements. The agent logs a warning when readings become unavailable and keeps polling.
 
 Set `CpuTemperature:PollingIntervalSeconds` in `appsettings.json`, or set the `CpuTemperature__PollingIntervalSeconds` environment variable. Use a whole number from 1 to 4294967 and restart the agent to apply the change.
 

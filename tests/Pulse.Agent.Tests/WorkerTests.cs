@@ -20,91 +20,99 @@ public class WorkerTests
         var clock = new FakeTimeProvider();
         var start = clock.GetUtcNow();
         var cpuSensor = new CpuTemperatureSource(42.5f);
-        var gpuSensor = new GpuTemperatureSource(61.0f);
+        var gpuSensor = new GpuSource(new GpuReading(61.0f, 4096f, 12288f));
+        var memorySensor = new MemorySource(new MemoryReading(16384f, 32768f));
         var logger = new SampleLogger(clock);
         var options = Options.Create(new CpuTemperatureOptions { PollingIntervalSeconds = intervalSeconds });
         var publisher = Substitute.For<ITelemetryPublisher>();
-        using var worker = new Worker(cpuSensor, gpuSensor, publisher, options, clock, logger);
+        using var worker = new Worker(cpuSensor, gpuSensor, memorySensor, publisher, options, clock, logger);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var interval = TimeSpan.FromSeconds(intervalSeconds);
         var millisecond = TimeSpan.FromMilliseconds(1);
 
         await worker.StartAsync(timeout.Token);
-        var firstCpu = await logger.Samples.Reader.ReadAsync(timeout.Token);
-        var firstGpu = await logger.Samples.Reader.ReadAsync(timeout.Token);
-        Assert.Equal(start, firstCpu.Time);
-        Assert.Equal(LogLevel.Information, firstCpu.Level);
-        Assert.Equal(42.5f, firstCpu.CpuTemperature);
-        Assert.Equal(start, firstGpu.Time);
-        Assert.Equal(LogLevel.Information, firstGpu.Level);
-        Assert.Equal(61.0f, firstGpu.GpuTemperature);
+        var firstEntries = await ReadEntriesAsync(logger, 4, timeout.Token);
+        Assert.All(firstEntries, entry =>
+        {
+            Assert.Equal(start, entry.Time);
+            Assert.Equal(LogLevel.Information, entry.Level);
+        });
 
         clock.Advance(interval - millisecond);
         Assert.False(logger.Samples.Reader.TryRead(out _));
         clock.Advance(millisecond);
-        Assert.Equal(start + interval, (await logger.Samples.Reader.ReadAsync(timeout.Token)).Time);
-        Assert.Equal(start + interval, (await logger.Samples.Reader.ReadAsync(timeout.Token)).Time);
+        var secondEntries = await ReadEntriesAsync(logger, 4, timeout.Token);
+        Assert.All(secondEntries, entry => Assert.Equal(start + interval, entry.Time));
 
         clock.Advance(interval);
-        Assert.Equal(start + interval + interval, (await logger.Samples.Reader.ReadAsync(timeout.Token)).Time);
-        Assert.Equal(start + interval + interval, (await logger.Samples.Reader.ReadAsync(timeout.Token)).Time);
+        var thirdEntries = await ReadEntriesAsync(logger, 4, timeout.Token);
+        Assert.All(thirdEntries, entry => Assert.Equal(start + interval + interval, entry.Time));
 
         await worker.StopAsync(timeout.Token);
         clock.Advance(interval);
         Assert.False(logger.Samples.Reader.TryRead(out _));
         Assert.Equal(3, cpuSensor.ReadCount);
         Assert.Equal(3, gpuSensor.ReadCount);
-        publisher.Received(1).PublishTelemetry(42.5f, 61.0f, start);
-        publisher.Received(1).PublishTelemetry(42.5f, 61.0f, start + interval);
-        publisher.Received(1).PublishTelemetry(42.5f, 61.0f, start + interval + interval);
+        Assert.Equal(3, memorySensor.ReadCount);
+        publisher.Received(1).PublishTelemetry(new TelemetrySample(start, 42.5f, 61.0f, 16384f, 32768f, 4096f, 12288f));
+        publisher.Received(1).PublishTelemetry(new TelemetrySample(start + interval, 42.5f, 61.0f, 16384f, 32768f, 4096f, 12288f));
+        publisher.Received(1).PublishTelemetry(new TelemetrySample(start + interval + interval, 42.5f, 61.0f, 16384f, 32768f, 4096f, 12288f));
     }
 
     [Fact]
-    public async Task ContinuesPollingWhenTemperaturesAreUnavailableOrPartiallyAvailable()
+    public async Task ContinuesPollingWhenMetricsAreUnavailableOrPartiallyAvailable()
     {
         var clock = new FakeTimeProvider();
         var cpuSensor = new CpuTemperatureSource(null);
-        var gpuSensor = new GpuTemperatureSource(null);
+        var gpuSensor = new GpuSource(new GpuReading(null, null, null));
+        var memorySensor = new MemorySource(null);
         var logger = new SampleLogger(clock);
         var options = new CpuTemperatureOptions();
         var publisher = Substitute.For<ITelemetryPublisher>();
-        using var worker = new Worker(cpuSensor, gpuSensor, publisher, Options.Create(options), clock, logger);
+        using var worker = new Worker(cpuSensor, gpuSensor, memorySensor, publisher, Options.Create(options), clock, logger);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var interval = TimeSpan.FromSeconds(options.PollingIntervalSeconds);
 
         await worker.StartAsync(timeout.Token);
-        var cpuUnavailable = await logger.Samples.Reader.ReadAsync(timeout.Token);
-        var gpuUnavailable = await logger.Samples.Reader.ReadAsync(timeout.Token);
-        Assert.Equal(LogLevel.Warning, cpuUnavailable.Level);
-        Assert.Null(cpuUnavailable.CpuTemperature);
-        Assert.Equal(LogLevel.Warning, gpuUnavailable.Level);
-        Assert.Null(gpuUnavailable.GpuTemperature);
+        var initialWarnings = await ReadEntriesAsync(logger, 4, timeout.Token);
+        Assert.All(initialWarnings, entry => Assert.Equal(LogLevel.Warning, entry.Level));
 
-        gpuSensor.Temperature = 61f;
+        memorySensor.Reading = new MemoryReading(12288f, 32768f);
         clock.Advance(interval);
-        var gpuOnly = await logger.Samples.Reader.ReadAsync(timeout.Token);
-        Assert.Equal(LogLevel.Information, gpuOnly.Level);
-        Assert.Equal(61f, gpuOnly.GpuTemperature);
+        var memoryOnly = await logger.Samples.Reader.ReadAsync(timeout.Token);
+        Assert.Equal(LogLevel.Information, memoryOnly.Level);
 
         cpuSensor.Temperature = 58f;
+        gpuSensor.Reading = new GpuReading(61f, 3072f, 8192f);
         clock.Advance(interval);
-        var cpuRecovered = await logger.Samples.Reader.ReadAsync(timeout.Token);
-        var gpuContinued = await logger.Samples.Reader.ReadAsync(timeout.Token);
-        Assert.Equal(LogLevel.Information, cpuRecovered.Level);
-        Assert.Equal(58f, cpuRecovered.CpuTemperature);
-        Assert.Equal(LogLevel.Information, gpuContinued.Level);
-        Assert.Equal(61f, gpuContinued.GpuTemperature);
+        var allRecovered = await ReadEntriesAsync(logger, 4, timeout.Token);
+        Assert.All(allRecovered, entry => Assert.Equal(LogLevel.Information, entry.Level));
 
         cpuSensor.Temperature = null;
-        gpuSensor.Temperature = null;
+        gpuSensor.Reading = new GpuReading(null, null, null);
+        memorySensor.Reading = null;
         clock.Advance(interval);
-        Assert.Equal(LogLevel.Warning, (await logger.Samples.Reader.ReadAsync(timeout.Token)).Level);
-        Assert.Equal(LogLevel.Warning, (await logger.Samples.Reader.ReadAsync(timeout.Token)).Level);
+        var finalWarnings = await ReadEntriesAsync(logger, 4, timeout.Token);
+        Assert.All(finalWarnings, entry => Assert.Equal(LogLevel.Warning, entry.Level));
 
         await worker.StopAsync(timeout.Token);
-        publisher.Received(2).PublishTelemetry(Arg.Any<float?>(), Arg.Any<float?>(), Arg.Any<DateTimeOffset>());
-        publisher.Received(1).PublishTelemetry(null, 61f, gpuOnly.Time);
-        publisher.Received(1).PublishTelemetry(58f, 61f, cpuRecovered.Time);
+        publisher.Received(2).PublishTelemetry(Arg.Any<TelemetrySample>());
+        publisher.Received(1).PublishTelemetry(new TelemetrySample(memoryOnly.Time, null, null, 12288f, 32768f, null, null));
+        publisher.Received(1).PublishTelemetry(new TelemetrySample(allRecovered[0].Time, 58f, 61f, 12288f, 32768f, 3072f, 8192f));
+    }
+
+    private static async Task<List<(DateTimeOffset Time, LogLevel Level)>> ReadEntriesAsync(
+        SampleLogger logger,
+        int count,
+        CancellationToken cancellationToken)
+    {
+        var entries = new List<(DateTimeOffset, LogLevel)>(count);
+        for (var i = 0; i < count; i++)
+        {
+            entries.Add(await logger.Samples.Reader.ReadAsync(cancellationToken));
+        }
+
+        return entries;
     }
 
     private sealed class CpuTemperatureSource(float? temperature) : ICpuTemperatureSource
@@ -119,22 +127,34 @@ public class WorkerTests
         }
     }
 
-    private sealed class GpuTemperatureSource(float? temperature) : IGpuTemperatureSource
+    private sealed class GpuSource(GpuReading reading) : IGpuSource
     {
-        public float? Temperature { get; set; } = temperature;
+        public GpuReading Reading { get; set; } = reading;
         public int ReadCount { get; private set; }
 
-        public float? ReadTemperatureCelsius()
+        public GpuReading Read()
         {
             ReadCount++;
-            return Temperature;
+            return Reading;
+        }
+    }
+
+    private sealed class MemorySource(MemoryReading? reading) : IMemorySource
+    {
+        public MemoryReading? Reading { get; set; } = reading;
+        public int ReadCount { get; private set; }
+
+        public MemoryReading? ReadMemory()
+        {
+            ReadCount++;
+            return Reading;
         }
     }
 
     private sealed class SampleLogger(TimeProvider clock) : ILogger<Worker>
     {
-        public Channel<(DateTimeOffset Time, LogLevel Level, float? CpuTemperature, float? GpuTemperature)> Samples { get; } =
-            Channel.CreateUnbounded<(DateTimeOffset, LogLevel, float?, float?)>();
+        public Channel<(DateTimeOffset Time, LogLevel Level)> Samples { get; } =
+            Channel.CreateUnbounded<(DateTimeOffset, LogLevel)>();
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
@@ -143,10 +163,7 @@ public class WorkerTests
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            var fields = (IReadOnlyList<KeyValuePair<string, object?>>)(object)state!;
-            var cpuTemperature = fields.FirstOrDefault(field => field.Key == "CpuTemperatureCelsius").Value as float?;
-            var gpuTemperature = fields.FirstOrDefault(field => field.Key == "GpuTemperatureCelsius").Value as float?;
-            Samples.Writer.TryWrite((clock.GetUtcNow(), logLevel, cpuTemperature, gpuTemperature));
+            Samples.Writer.TryWrite((clock.GetUtcNow(), logLevel));
         }
     }
 }

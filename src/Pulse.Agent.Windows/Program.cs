@@ -19,7 +19,8 @@ builder.Services.AddOptions<MqttOptions>()
         "Mqtt:Username is required when Mqtt:Password is set.")
     .ValidateOnStart();
 builder.Services.AddSingleton<ICpuTemperatureSource, CpuCollector>();
-builder.Services.AddSingleton<IGpuTemperatureSource, GpuCollector>();
+builder.Services.AddSingleton<IGpuSource, GpuCollector>();
+builder.Services.AddSingleton<IMemorySource, MemoryCollector>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<MqttService>();
 builder.Services.AddSingleton<ITelemetryPublisher>(services => services.GetRequiredService<MqttService>());

@@ -6,7 +6,8 @@ namespace Pulse.Agent.Windows;
 
 public class Worker(
     ICpuTemperatureSource cpuTemperature,
-    IGpuTemperatureSource gpuTemperature,
+    IGpuSource gpuSource,
+    IMemorySource memorySource,
     ITelemetryPublisher telemetry,
     IOptions<CpuTemperatureOptions> options,
     TimeProvider timeProvider,
@@ -17,12 +18,15 @@ public class Worker(
         var interval = TimeSpan.FromSeconds(options.Value.PollingIntervalSeconds);
         using var timer = new PeriodicTimer(interval, timeProvider);
         var reportCpuUnavailable = true;
-        var reportGpuUnavailable = true;
+        var reportGpuTemperatureUnavailable = true;
+        var reportGpuMemoryUnavailable = true;
+        var reportMemoryUnavailable = true;
 
         while (!stoppingToken.IsCancellationRequested)
         {
             var cpuCelsius = cpuTemperature.ReadTemperatureCelsius();
-            var gpuCelsius = gpuTemperature.ReadTemperatureCelsius();
+            var gpu = gpuSource.Read();
+            var memory = memorySource.ReadMemory();
 
             if (cpuCelsius is float cpu)
             {
@@ -35,20 +39,70 @@ public class Worker(
                 reportCpuUnavailable = false;
             }
 
-            if (gpuCelsius is float gpu)
+            if (gpu.TemperatureCelsius is float gpuTemp)
             {
-                logger.LogInformation("GPU temperature: {GpuTemperatureCelsius:F1} °C", gpu);
-                reportGpuUnavailable = true;
+                logger.LogInformation("GPU temperature: {GpuTemperatureCelsius:F1} °C", gpuTemp);
+                reportGpuTemperatureUnavailable = true;
             }
-            else if (reportGpuUnavailable)
+            else if (reportGpuTemperatureUnavailable)
             {
                 logger.LogWarning("GPU temperature is unavailable");
-                reportGpuUnavailable = false;
+                reportGpuTemperatureUnavailable = false;
             }
 
-            if (cpuCelsius is not null || gpuCelsius is not null)
+            if (memory?.UsedMegabytes is float memoryUsed)
             {
-                telemetry.PublishTelemetry(cpuCelsius, gpuCelsius, timeProvider.GetUtcNow());
+                if (memory.TotalMegabytes is float memoryTotal)
+                {
+                    logger.LogInformation("System memory: {MemoryUsedMegabytes:F0} / {MemoryTotalMegabytes:F0} MB",
+                        memoryUsed, memoryTotal);
+                }
+                else
+                {
+                    logger.LogInformation("System memory used: {MemoryUsedMegabytes:F0} MB", memoryUsed);
+                }
+
+                reportMemoryUnavailable = true;
+            }
+            else if (reportMemoryUnavailable)
+            {
+                logger.LogWarning("System memory is unavailable");
+                reportMemoryUnavailable = false;
+            }
+
+            if (gpu.MemoryUsedMegabytes is float gpuMemoryUsed)
+            {
+                if (gpu.MemoryTotalMegabytes is float gpuMemoryTotal)
+                {
+                    logger.LogInformation("GPU memory: {GpuMemoryUsedMegabytes:F0} / {GpuMemoryTotalMegabytes:F0} MB",
+                        gpuMemoryUsed, gpuMemoryTotal);
+                }
+                else
+                {
+                    logger.LogInformation("GPU memory used: {GpuMemoryUsedMegabytes:F0} MB", gpuMemoryUsed);
+                }
+
+                reportGpuMemoryUnavailable = true;
+            }
+            else if (reportGpuMemoryUnavailable)
+            {
+                logger.LogWarning("GPU memory is unavailable");
+                reportGpuMemoryUnavailable = false;
+            }
+
+            if (cpuCelsius is not null
+                || gpu.TemperatureCelsius is not null
+                || memory?.UsedMegabytes is not null
+                || gpu.MemoryUsedMegabytes is not null)
+            {
+                telemetry.PublishTelemetry(new TelemetrySample(
+                    timeProvider.GetUtcNow(),
+                    cpuCelsius,
+                    gpu.TemperatureCelsius,
+                    memory?.UsedMegabytes,
+                    memory?.TotalMegabytes,
+                    gpu.MemoryUsedMegabytes,
+                    gpu.MemoryTotalMegabytes));
             }
 
             if (!await timer.WaitForNextTickAsync(stoppingToken))
