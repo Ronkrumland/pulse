@@ -2,15 +2,10 @@ using LibreHardwareMonitor.Hardware;
 
 namespace Pulse.Agent.Windows.Collectors;
 
-internal sealed class GpuCollector : IGpuSource, IDisposable
+internal sealed class GpuCollector(IHardwareProvider hardwareProvider) : IGpuSource
 {
-    private readonly Computer _computer = new() { IsGpuEnabled = true };
-
-    public GpuReading Read()
-    {
-        _computer.Open();
-        return Read(_computer.Hardware);
-    }
+    public GpuReading Read() =>
+        Read(hardwareProvider.GetHardware());
 
     internal static GpuReading Read(IEnumerable<IHardware> hardware)
     {
@@ -102,6 +97,4 @@ internal sealed class GpuCollector : IGpuSource, IDisposable
 
         return currentTotal is null && candidateUsed > currentUsed.Value;
     }
-
-    public void Dispose() => _computer.Close();
 }
