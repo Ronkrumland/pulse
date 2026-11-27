@@ -53,13 +53,17 @@ public class MqttServiceTests
         try
         {
             await service.StartAsync(timeout.Token);
-            service.PublishTelemetry(43.25f, 61.5f, firstObservation);
+            service.PublishTelemetry(new TelemetrySample(firstObservation, 43.25f, 61.5f, 16384f, 32768f, 4096f, 12288f));
 
             var first = await WaitForRetainedMessageAsync(broker, telemetryTopic, _ => true, timeout.Token);
             Assert.Equal(deviceId, first.GetProperty("deviceId").GetString());
             Assert.Equal(firstObservation, first.GetProperty("observedAt").GetDateTimeOffset());
             Assert.Equal(43.25f, first.GetProperty("cpuTemperatureCelsius").GetSingle());
             Assert.Equal(61.5f, first.GetProperty("gpuTemperatureCelsius").GetSingle());
+            Assert.Equal(16384f, first.GetProperty("memoryUsedMegabytes").GetSingle());
+            Assert.Equal(32768f, first.GetProperty("memoryTotalMegabytes").GetSingle());
+            Assert.Equal(4096f, first.GetProperty("gpuMemoryUsedMegabytes").GetSingle());
+            Assert.Equal(12288f, first.GetProperty("gpuMemoryTotalMegabytes").GetSingle());
             var online = await WaitForRetainedMessageAsync(broker, availabilityTopic,
                 json => json.GetProperty("online").GetBoolean(), timeout.Token);
             Assert.Equal(deviceId, online.GetProperty("deviceId").GetString());
@@ -69,12 +73,16 @@ public class MqttServiceTests
             await WaitForRetainedMessageAsync(broker, availabilityTopic,
                 json => !json.GetProperty("online").GetBoolean(), timeout.Token);
 
-            service.PublishTelemetry(46f, 63f, secondObservation);
-            service.PublishTelemetry(48f, null, latestObservation);
+            service.PublishTelemetry(new TelemetrySample(secondObservation, 46f, 63f, 17408f, 32768f, 5120f, 12288f));
+            service.PublishTelemetry(new TelemetrySample(latestObservation, 48f, null, 18432f, 32768f, null, null));
             var latest = await WaitForRetainedMessageAsync(broker, telemetryTopic,
                 json => json.GetProperty("observedAt").GetDateTimeOffset() == latestObservation, timeout.Token);
             Assert.Equal(48f, latest.GetProperty("cpuTemperatureCelsius").GetSingle());
             Assert.Equal(JsonValueKind.Null, latest.GetProperty("gpuTemperatureCelsius").ValueKind);
+            Assert.Equal(18432f, latest.GetProperty("memoryUsedMegabytes").GetSingle());
+            Assert.Equal(32768f, latest.GetProperty("memoryTotalMegabytes").GetSingle());
+            Assert.Equal(JsonValueKind.Null, latest.GetProperty("gpuMemoryUsedMegabytes").ValueKind);
+            Assert.Equal(JsonValueKind.Null, latest.GetProperty("gpuMemoryTotalMegabytes").ValueKind);
             await WaitForRetainedMessageAsync(broker, availabilityTopic,
                 json => json.GetProperty("online").GetBoolean(), timeout.Token);
 

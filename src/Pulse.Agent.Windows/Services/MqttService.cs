@@ -19,15 +19,19 @@ internal sealed class MqttService(IOptions<MqttOptions> options, TimeProvider ti
         new BoundedChannelOptions(1) { SingleReader = true, FullMode = BoundedChannelFullMode.DropOldest });
     private DeviceTelemetry? _pendingReading;
 
-    public void PublishTelemetry(float? cpuTemperatureCelsius, float? gpuTemperatureCelsius, DateTimeOffset observedAt)
+    public void PublishTelemetry(TelemetrySample sample)
     {
         if (_options.Enabled)
         {
             _readings.Writer.TryWrite(new DeviceTelemetry(
                 _options.DeviceId,
-                observedAt,
-                cpuTemperatureCelsius,
-                gpuTemperatureCelsius));
+                sample.ObservedAt,
+                sample.CpuTemperatureCelsius,
+                sample.GpuTemperatureCelsius,
+                sample.MemoryUsedMegabytes,
+                sample.MemoryTotalMegabytes,
+                sample.GpuMemoryUsedMegabytes,
+                sample.GpuMemoryTotalMegabytes));
         }
     }
 

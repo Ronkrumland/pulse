@@ -2,19 +2,21 @@ using LibreHardwareMonitor.Hardware;
 
 namespace Pulse.Agent.Windows.Collectors;
 
-internal sealed class GpuCollector : IGpuTemperatureSource, IDisposable
+internal sealed class GpuCollector : IGpuSource, IDisposable
 {
     private readonly Computer _computer = new() { IsGpuEnabled = true };
 
-    public float? ReadTemperatureCelsius()
+    public GpuReading Read()
     {
         _computer.Open();
-        return ReadTemperatureCelsius(_computer.Hardware);
+        return Read(_computer.Hardware);
     }
 
-    internal static float? ReadTemperatureCelsius(IEnumerable<IHardware> hardware)
+    internal static GpuReading Read(IEnumerable<IHardware> hardware)
     {
         float? highestTemperature = null;
+        float? selectedMemoryUsed = null;
+        float? selectedMemoryTotal = null;
 
         foreach (var device in hardware)
         {
@@ -24,23 +26,81 @@ internal sealed class GpuCollector : IGpuTemperatureSource, IDisposable
             }
 
             device.Update();
+
+            float? deviceMemoryUsed = null;
+            float? deviceDedicatedMemoryUsed = null;
+            float? deviceMemoryFree = null;
+            float? deviceMemoryTotal = null;
+
             foreach (var sensor in device.Sensors)
             {
-                if (sensor.SensorType != SensorType.Temperature
-                    || sensor.Value is not float value
-                    || !float.IsFinite(value))
+                if (sensor.Value is not float value || !float.IsFinite(value))
                 {
                     continue;
                 }
 
-                if (highestTemperature is null || value > highestTemperature)
+                if (sensor.SensorType == SensorType.Temperature)
                 {
-                    highestTemperature = value;
+                    if (highestTemperature is null || value > highestTemperature)
+                    {
+                        highestTemperature = value;
+                    }
                 }
+                else if (sensor.SensorType == SensorType.SmallData && value >= 0)
+                {
+                    switch (sensor.Name)
+                    {
+                        case "GPU Memory Used":
+                            deviceMemoryUsed = value;
+                            break;
+                        case "D3D Dedicated Memory Used":
+                            deviceDedicatedMemoryUsed = value;
+                            break;
+                        case "GPU Memory Free":
+                            deviceMemoryFree = value;
+                            break;
+                        case "GPU Memory Total":
+                            deviceMemoryTotal = value;
+                            break;
+                    }
+                }
+            }
+
+            var used = deviceMemoryUsed ?? deviceDedicatedMemoryUsed;
+            float? total = deviceMemoryTotal is > 0
+                ? deviceMemoryTotal
+                : used is float u && deviceMemoryFree is float f && u + f > 0
+                    ? u + f
+                    : null;
+
+            if (used is not null && IsPreferredGpuMemory(used.Value, total, selectedMemoryUsed, selectedMemoryTotal))
+            {
+                selectedMemoryUsed = used;
+                selectedMemoryTotal = total;
             }
         }
 
-        return highestTemperature;
+        return new GpuReading(highestTemperature, selectedMemoryUsed, selectedMemoryTotal);
+    }
+
+    private static bool IsPreferredGpuMemory(float candidateUsed, float? candidateTotal, float? currentUsed, float? currentTotal)
+    {
+        if (currentUsed is null)
+        {
+            return true;
+        }
+
+        if (candidateTotal is not null && currentTotal is null)
+        {
+            return true;
+        }
+
+        if (candidateTotal is not null && currentTotal is not null)
+        {
+            return candidateTotal.Value > currentTotal.Value;
+        }
+
+        return currentTotal is null && candidateUsed > currentUsed.Value;
     }
 
     public void Dispose() => _computer.Close();
