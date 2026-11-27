@@ -4,9 +4,9 @@ Pulse is a home-lab project for monitoring and managing computers on a private n
 
 ## Project status
 
-The Windows agent runs on .NET 10 and logs CPU temperatures at a configurable interval. The remaining projects are scaffolds. The component READMEs describe their intended responsibilities and the first integration milestone.
+The Windows agent runs on .NET 10, logs CPU temperatures at a configurable interval, and publishes telemetry and availability when a broker is configured. Pulse.Contracts defines the MQTT payloads. The remaining projects are scaffolds.
 
-For CPU temperature setup and the PawnIO driver download, see the [Windows agent README](src/Pulse.Agent.Windows/README.md).
+For CPU temperature setup, the PawnIO driver download, and broker configuration, see the [Windows agent README](src/Pulse.Agent.Windows/README.md).
 
 ## Architecture
 

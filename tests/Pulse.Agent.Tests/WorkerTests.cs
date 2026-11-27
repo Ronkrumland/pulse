@@ -2,8 +2,10 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using NSubstitute;
 using Pulse.Agent.Windows;
 using Pulse.Agent.Windows.Collectors;
+using Pulse.Agent.Windows.Services;
 using Xunit;
 
 namespace Pulse.Agent.Tests;
@@ -20,7 +22,8 @@ public class WorkerTests
         var sensor = new TemperatureSource(42.5f);
         var logger = new SampleLogger(clock);
         var options = Options.Create(new CpuTemperatureOptions { PollingIntervalSeconds = intervalSeconds });
-        using var worker = new Worker(sensor, options, clock, logger);
+        var publisher = Substitute.For<ITelemetryPublisher>();
+        using var worker = new Worker(sensor, publisher, options, clock, logger);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var interval = TimeSpan.FromSeconds(intervalSeconds);
         var millisecond = TimeSpan.FromMilliseconds(1);
@@ -43,6 +46,9 @@ public class WorkerTests
         clock.Advance(interval);
         Assert.False(logger.Samples.Reader.TryRead(out _));
         Assert.Equal(3, sensor.ReadCount);
+        publisher.Received(1).PublishCpuTemperature(42.5f, start);
+        publisher.Received(1).PublishCpuTemperature(42.5f, start + interval);
+        publisher.Received(1).PublishCpuTemperature(42.5f, start + interval + interval);
     }
 
     [Fact]
@@ -52,7 +58,8 @@ public class WorkerTests
         var sensor = new TemperatureSource(null);
         var logger = new SampleLogger(clock);
         var options = new CpuTemperatureOptions();
-        using var worker = new Worker(sensor, Options.Create(options), clock, logger);
+        var publisher = Substitute.For<ITelemetryPublisher>();
+        using var worker = new Worker(sensor, publisher, Options.Create(options), clock, logger);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var interval = TimeSpan.FromSeconds(options.PollingIntervalSeconds);
 
@@ -71,6 +78,8 @@ public class WorkerTests
         clock.Advance(interval);
         Assert.Equal(LogLevel.Warning, (await logger.Samples.Reader.ReadAsync(timeout.Token)).Level);
         await worker.StopAsync(timeout.Token);
+        publisher.Received(1).PublishCpuTemperature(Arg.Any<float>(), Arg.Any<DateTimeOffset>());
+        publisher.Received(1).PublishCpuTemperature(58f, recovered.Time);
     }
 
     private sealed class TemperatureSource(float? temperature) : ICpuTemperatureSource
