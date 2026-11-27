@@ -4,7 +4,9 @@ Pulse is a home-lab project for monitoring and managing computers on a private n
 
 ## Project status
 
-This checkout contains component documentation and empty C# projects targeting .NET 11. Runnable services, deployment manifests, and automated tests are still to come. The READMEs describe intended responsibilities and the first integration milestone.
+The Windows agent runs on .NET 10, logs CPU temperatures at a configurable interval, and publishes telemetry and availability when a broker is configured. Pulse.Contracts defines the MQTT payloads. The remaining projects are scaffolds.
+
+For CPU temperature setup, the PawnIO driver download, and broker configuration, see the [Windows agent README](src/Pulse.Agent.Windows/README.md).
 
 ## Architecture
 
@@ -27,7 +29,7 @@ On Windows, the background service owns machine-level work. A separate helper in
 | [Pulse.Server](src/Pulse.Server/README.md) | Management API and device state |
 | [Pulse.Web](src/Pulse.Web/README.md) | Browser-based management interface |
 
-The `tests/` directory has empty projects for agent, server, and integration tests. The local scaffold reserves `deploy/` for deployment assets.
+Run `dotnet test` from the repository root to run the Windows agent tests. The server and integration test projects are scaffolds. The local scaffold reserves `deploy/` for deployment assets.
 
 ## First milestone
 

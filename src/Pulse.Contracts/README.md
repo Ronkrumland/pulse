@@ -1,13 +1,12 @@
 # Pulse.Contracts
 
-Planned shared message definitions for the platform agents and [Pulse.Server](../Pulse.Server/README.md). The first contract will cover device availability and hardware telemetry. Control requests and results will follow as their features are implemented.
+Shared MQTT message definitions for platform agents and [Pulse.Server](../Pulse.Server/README.md).
 
-| Message | Intended contents |
-| --- | --- |
-| Availability | Device identity and online or offline state |
-| Telemetry | Device identity, observation time, and available readings with units |
-| Command and result | Target device, requested action, request ID, and corresponding outcome |
+| Message | Topic | JSON payload |
+| --- | --- | --- |
+| Availability | `pulse/devices/{deviceId}/availability` | `{"deviceId":"gaming-pc","online":true}` |
+| CPU temperature | `pulse/devices/{deviceId}/telemetry` | `{"deviceId":"gaming-pc","observedAt":"2026-01-01T12:00:00+00:00","cpuTemperatureCelsius":54.5}` |
 
-The initial design calls for the broker to retain last-known state where useful. Observation time and availability let consumers show when that state is stale. Commands are intended to be non-retained and carry a request ID so recipients can recognize duplicate deliveries and correlate results.
+Both messages are retained and use QoS 1. The agent publishes `online: true` after connecting and `online: false` on graceful shutdown. The broker publishes the retained offline last will when it detects an unexpected disconnect. When a sensor is unavailable, the broker keeps the last valid telemetry. Use `observedAt` to determine how old that reading is. QoS 1 can deliver duplicates.
 
-Topic names, payload schemas, and delivery settings are still to be defined.
+Future command and result messages will carry a target device, request ID, action, and outcome. Commands are intended to be non-retained.
