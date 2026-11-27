@@ -23,7 +23,7 @@ public class WorkerTests
         var gpuSensor = new GpuSource(new GpuReading(61.0f, 4096f, 12288f));
         var memorySensor = new MemorySource(new MemoryReading(16384f, 32768f));
         var logger = new SampleLogger(clock);
-        var options = Options.Create(new CpuTemperatureOptions { PollingIntervalSeconds = intervalSeconds });
+        var options = Options.Create(new TelemetryOptions { PollingIntervalSeconds = intervalSeconds });
         var publisher = Substitute.For<ITelemetryPublisher>();
         using var worker = new Worker(cpuSensor, gpuSensor, memorySensor, publisher, options, clock, logger);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -67,7 +67,7 @@ public class WorkerTests
         var gpuSensor = new GpuSource(new GpuReading(null, null, null));
         var memorySensor = new MemorySource(null);
         var logger = new SampleLogger(clock);
-        var options = new CpuTemperatureOptions();
+        var options = new TelemetryOptions();
         var publisher = Substitute.For<ITelemetryPublisher>();
         using var worker = new Worker(cpuSensor, gpuSensor, memorySensor, publisher, Options.Create(options), clock, logger);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
