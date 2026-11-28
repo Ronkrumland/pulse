@@ -3,9 +3,11 @@
     <Project Path="src/Pulse.Agent.Windows/Pulse.Agent.Windows.csproj" />
     <Project Path="src/Pulse.Agent.Windows.Session/Pulse.Agent.Windows.Session.csproj" />
     <Project Path="src/Pulse.Contracts/Pulse.Contracts.csproj" />
+    <Project Path="src/Pulse.Server/Pulse.Server.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Pulse.Agent.Tests/Pulse.Agent.Tests.csproj" />
     <Project Path="tests/Pulse.Agent.Windows.Session.Tests/Pulse.Agent.Windows.Session.Tests.csproj" />
+    <Project Path="tests/Pulse.Server.Tests/Pulse.Server.Tests.csproj" />
   </Folder>
 </Solution>
